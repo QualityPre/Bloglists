@@ -2,6 +2,9 @@ const blogsRouter = require('express').Router()
 const Blog = require('../models/blogModel')
 const logger = require('../utils/logger')
 
+//user
+const User = require('../models/userModel')
+
 blogsRouter.get('/', async (request, response) => {
   const blogs = await Blog.find({})
   response.json(blogs)
@@ -10,16 +13,26 @@ blogsRouter.get('/', async (request, response) => {
 blogsRouter.post('/', async (request, response, next) => {
   const body = request.body
 
+  // adding user information via userId who added the blog
+
+  const user = await User.findById(body.userId)
+
   if (!body.likes) body.likes = 0
   const blog = new Blog({
     title: body.title,
     author: body.author,
     url: body.url,
     likes: body.likes,
+    user: user._id,
   })
   try {
     if (blog.title && blog.url) {
       const savedBlog = await blog.save()
+
+      // adding the blog to the user
+      user.blogs = user.blogs.concat(savedBlog._id)
+      await user.save()
+
       response.status(201).json(savedBlog)
       logger.info(` ${blog.title} has been added to the blog list`)
     } else {
