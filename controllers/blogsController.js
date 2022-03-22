@@ -2,6 +2,9 @@ const blogsRouter = require('express').Router()
 const Blog = require('../models/blogModel')
 const logger = require('../utils/logger')
 
+//login token
+const jwt = require('jsonwebtoken')
+
 //user
 const User = require('../models/userModel')
 
@@ -10,37 +13,47 @@ blogsRouter.get('/', async (request, response) => {
   response.json(blogs)
 })
 
+const getTokenFrom = (request) => {
+  const authorization = request.get('authorization')
+  if (authorization && authorization.toLowerCase().startsWith('bearer ')) {
+    return authorization.substring(7)
+  }
+  return null
+}
+
 blogsRouter.post('/', async (request, response, next) => {
   const body = request.body
 
-  // adding user information via userId who added the blog
+  const token = getTokenFrom(request)
+  const decodedToken = jwt.verify(token, process.env.SECRET)
+  if (!decodedToken.id) {
+    return response.status(401).json({ error: 'token missing or invalid' })
+  }
+  const user = await User.findById(decodedToken.id)
 
-  const user = await User.findById(body.userId)
+  if (!body.likes) {
+    body.likes = 0
+  }
 
-  if (!body.likes) body.likes = 0
+  if (!body.comments) {
+    body.comments = []
+  }
+
   const blog = new Blog({
     title: body.title,
     author: body.author,
     url: body.url,
     likes: body.likes,
+    comments: body.comments,
     user: user._id,
   })
-  try {
-    if (blog.title && blog.url) {
-      const savedBlog = await blog.save()
 
-      // adding the blog to the user
-      user.blogs = user.blogs.concat(savedBlog._id)
-      await user.save()
-
-      response.status(201).json(savedBlog)
-      logger.info(` ${blog.title} has been added to the blog list`)
-    } else {
-      response.status(400).end()
-    }
-  } catch (exception) {
-    next(exception)
-  }
+  const savedBlog = await blog.save()
+  logger.info(`added ${blog.title} to the blog list`)
+  user.blogs = user.blogs.concat(savedBlog._id)
+  await user.save()
+  logger.info(`blog linked to user ${user.username}`)
+  response.status(201).json(savedBlog)
 })
 
 blogsRouter.delete('/:id', async (request, response, next) => {
